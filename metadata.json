@@ -1,0 +1,5 @@
+{
+  "name": "Student Learning Report Generator",
+  "description": "Generates a detailed student learning report card from uploaded Excel data, visualizing unit progress, accuracy trends, and teacher feedback.",
+  "requestFramePermissions": []
+}
