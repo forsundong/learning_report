@@ -1,3 +1,4 @@
+
 import { StudentDataRow, ProcessedReportData, UnitData, Badge, TrendAnalysis, MonthlySummary, UserRole } from './types';
 
 export const CURRICULA: Record<string, string[]> = {
@@ -123,10 +124,16 @@ export const processExcelData = (
         ? validStudentsPass.reduce((sum, row) => sum + parseRate(row.pass_rate), 0) / validStudentsPass.length 
         : 0;
 
+      const validStudentsTime = allStudentsInThisLesson.filter(row => parseSeconds(row.first_cost_seconds) > 0);
+      const classAvgTime = validStudentsTime.length > 0
+        ? validStudentsTime.reduce((sum, row) => sum + parseSeconds(row.first_cost_seconds), 0) / validStudentsTime.length
+        : 0;
+
       lessons.push({
         unitNumber: seq,
         unitName: seq === 0 ? '课前测' : `第${seq}讲`,
         timeSpentSeconds: parseSeconds(r.first_cost_seconds),
+        classTimeSpentSeconds: classAvgTime,
         status: r.unit_finish_status === '完课' ? 'high' : 'low',
         statusLabel: r.unit_finish_status === '完课' ? '已完成' : '学习中',
         accuracy: acc,
@@ -139,16 +146,20 @@ export const processExcelData = (
     });
     lessons.sort((a, b) => a.unitNumber - b.unitNumber);
 
-    // 勋章判定星级计算 (固定取最近的5次有效课时作为评价基准)
+    // 1. 勋章判定星级计算 (精准逻辑)
     const preTest = lessons.find(l => l.unitNumber === 0);
     let progressStars = 0, persistenceStars = 0, timeStars = 0, sprintStars = 0;
     
     lessons.forEach(l => {
         if (l.unitNumber === 0) return;
+        // 学习进步徽章: 共有X节课比课前测进步
         if (preTest && l.accuracy > preTest.accuracy) progressStars++;
+        // 坚持小达人: 共有X节课完成作答
         if (l.status === 'high') persistenceStars++;
-        if (preTest && l.timeSpentSeconds < preTest.timeSpentSeconds) timeStars++;
-        if (l.accuracy >= 90) sprintStars++;
+        // 时间小飞侠: 共有X节课比对应课程平均用时更短
+        if (l.timeSpentSeconds > 0 && l.timeSpentSeconds < l.classTimeSpentSeconds) timeStars++;
+        // 满分冲刺星: 共有X节课正确率≥50%
+        if (l.accuracy >= 50) sprintStars++;
     });
 
     const htBadges: Badge[] = [
@@ -169,17 +180,19 @@ export const processExcelData = (
       htBadges,
       completedUnitsCount: lessons.filter(l => l.status === 'high').length,
       units: lessons, 
-      trendAnalysis: calculateHTTrend(lessons),
+      trendAnalysis: calculateHTAccuracyTrend(lessons),
+      errorAnalysis: calculateHTErrorTrend(lessons),
       monthlySummary: { milestone: '', highlights: [], improvements: [] }
     };
   } else {
+    // 课导模式原有逻辑
     const unitMap = new Map<number, UnitData>();
     studentRows.forEach(r => {
         const uSeq = parseInt(String(r.level_sequence), 10);
         if (unitRange && (uSeq < unitRange.min || uSeq > unitRange.max)) return;
         if (!unitMap.has(uSeq)) {
             unitMap.set(uSeq, {
-                unitNumber: uSeq, unitName: `第${uSeq}单元`, timeSpentSeconds: 0, status: 'low',
+                unitNumber: uSeq, unitName: `第${uSeq}单元`, timeSpentSeconds: 0, classTimeSpentSeconds: 0, status: 'low',
                 statusLabel: '学习中', accuracy: 0, classAccuracy: 0, passRate: 0, classPassRate: 0, wrongCount: 0, analysis: ''
             });
         }
@@ -195,25 +208,12 @@ export const processExcelData = (
       const allStudentsInThisUnit = rows.filter(row => 
         parseInt(String(row.level_sequence), 10) === l.unitNumber
       );
-      
       const validStudentsAcc = allStudentsInThisUnit.filter(row => parseRate(row.answer_right_rate) > 0);
-      l.classAccuracy = validStudentsAcc.length > 0 
-        ? validStudentsAcc.reduce((sum, row) => sum + parseRate(row.answer_right_rate), 0) / validStudentsAcc.length 
-        : 0;
-
+      l.classAccuracy = validStudentsAcc.length > 0 ? validStudentsAcc.reduce((sum, row) => sum + parseRate(row.answer_right_rate), 0) / validStudentsAcc.length : 0;
       const validStudentsPass = allStudentsInThisUnit.filter(row => parseRate(row.pass_rate) > 0);
-      l.classPassRate = validStudentsPass.length > 0 
-        ? validStudentsPass.reduce((sum, row) => sum + parseRate(row.pass_rate), 0) / validStudentsPass.length 
-        : 0;
-
+      l.classPassRate = validStudentsPass.length > 0 ? validStudentsPass.reduce((sum, row) => sum + parseRate(row.pass_rate), 0) / validStudentsPass.length : 0;
       if (l.status === 'high') {
-        if (l.accuracy >= l.classAccuracy) {
-          l.analysis = '掌握扎实，超越平均';
-        } else {
-          l.analysis = '态度认真，请巩固错题';
-        }
-      } else {
-        l.analysis = ''; 
+        l.analysis = l.accuracy >= l.classAccuracy ? '掌握扎实，超越平均' : '态度认真，请巩固错题';
       }
     });
 
@@ -236,48 +236,98 @@ export const processExcelData = (
 };
 
 /**
- * 班主任系统趋势分析逻辑重构 (基于错误次数)
+ * 班主任系统：正确率趋势评语 (新规则1,2,3)
  */
-function calculateHTTrend(lessons: UnitData[]): TrendAnalysis {
+function calculateHTAccuracyTrend(lessons: UnitData[]): TrendAnalysis {
     const preTest = lessons.find(l => l.unitNumber === 0);
-    const activeLessons = lessons.filter(l => l.unitNumber > 0);
+    const activeLessons = lessons.filter(l => l.unitNumber > 0).sort((a, b) => a.unitNumber - b.unitNumber);
     if (activeLessons.length === 0) return { status: 'stable', title: '开启挑战', content: '宝贝已准备就绪，期待开启精彩的思维闯关之旅！' };
 
     const latest = activeLessons[activeLessons.length - 1];
     
-    // 规则3：错误次数逐课降低 (非递增且至少有一次下降)
-    let isDecreasing = activeLessons.length >= 2;
-    let actualDrop = false;
+    // 规则3：正确率节节攀升 (必须有2节以上且单调递增)
+    let isRising = activeLessons.length >= 2;
     for (let i = 1; i < activeLessons.length; i++) {
-        if (activeLessons[i].wrongCount > activeLessons[i-1].wrongCount) {
-            isDecreasing = false;
+        if (activeLessons[i].accuracy <= activeLessons[i-1].accuracy) {
+            isRising = false;
             break;
         }
-        if (activeLessons[i].wrongCount < activeLessons[i-1].wrongCount) {
-            actualDrop = true;
-        }
     }
-
-    if (isDecreasing && actualDrop) {
+    if (isRising) {
         return { 
           status: 'rising', 
-          title: '步步为营，飞速进步', 
-          content: '步步为营，错题持续减少，学习习惯与效果俱佳，进步飞速！' 
+          title: '完美的阶梯式成长', 
+          content: `完美的阶梯式成长！课程设计的每一步挑战，孩子都步步为营，正确率从${activeLessons[0].accuracy.toFixed(0)}%一路稳定升至${latest.accuracy.toFixed(0)}%。这正是科学学习路径与孩子努力同频共振的证明。` 
         };
     }
 
     // 规则1 & 2 (对比课前测)
     if (preTest) {
+        const x = preTest.accuracy.toFixed(0);
+        const y = latest.accuracy.toFixed(0);
+        const z = Math.abs(latest.accuracy - preTest.accuracy).toFixed(0);
+        const n = latest.unitNumber;
+
+        if (latest.accuracy > preTest.accuracy) {
+            return { 
+              status: 'improving', 
+              title: '进步跨越，表现亮眼', 
+              content: `太棒了！对比课前测（正确率${x}%），宝贝在第${n}课的正确率已提升至 ${y}%，${z}个百分点的跨越清晰展现了进步！` 
+            };
+        } else {
+            return { 
+              status: 'potential', 
+              title: '坚持思考，潜力无限', 
+              content: `值得点赞！从课前到第${n}节课的全程学习，宝贝展现了出色的坚持与思考习惯。面对不断升级的挑战仍兴趣盎然，这份专注力是未来突破的最大潜力。` 
+            };
+        }
+    }
+
+    return { 
+      status: 'stable', 
+      title: '保持状态', 
+      content: '展现了出色的学习习惯，面对挑战毫不退缩。保持这份专注力，下一次突破就在眼前！' 
+    };
+}
+
+/**
+ * 班主任系统：作答错误统计评语 (新规则1,2,3)
+ */
+function calculateHTErrorTrend(lessons: UnitData[]): TrendAnalysis {
+    const preTest = lessons.find(l => l.unitNumber === 0);
+    const activeLessons = lessons.filter(l => l.unitNumber > 0).sort((a, b) => a.unitNumber - b.unitNumber);
+    if (activeLessons.length === 0) return { status: 'stable', title: '学习足迹', content: '暂无记录，期待宝贝精彩表现。' };
+
+    const latest = activeLessons[activeLessons.length - 1];
+
+    // 规则3：错误次数逐课降低
+    let isDecreasing = activeLessons.length >= 2;
+    for (let i = 1; i < activeLessons.length; i++) {
+        if (activeLessons[i].wrongCount >= activeLessons[i-1].wrongCount) {
+            isDecreasing = false;
+            break;
+        }
+    }
+    if (isDecreasing) {
+        return { 
+          status: 'success', 
+          title: '步步为营，飞速进步', 
+          content: '步步为营，错题持续减少，学习习惯与效果俱佳，进步飞速！' 
+        };
+    }
+
+    // 规则1 & 2 (对比课前测错误数)
+    if (preTest) {
         if (latest.wrongCount < preTest.wrongCount) {
             return { 
               status: 'improving', 
-              title: '稳扎稳打，成效显著', 
+              title: '成效显著', 
               content: '错题日益减少，可见知识掌握越发扎实牢固！' 
             };
         } else if (latest.wrongCount > preTest.wrongCount) {
             return { 
               status: 'extension', 
-              title: '勇攀高峰，思维拓展', 
+              title: '思维拓展', 
               content: '挑战升级，敢于尝试复杂题目，正是思维深入拓展的表现！' 
             };
         }
@@ -285,8 +335,8 @@ function calculateHTTrend(lessons: UnitData[]): TrendAnalysis {
 
     return { 
       status: 'stable', 
-      title: '保持状态，蓄势待发', 
-      content: '展现了出色的学习习惯，面对挑战毫不退缩。保持这份专注力，下一次突破就在眼前！' 
+      title: '专注攻克', 
+      content: '每一道错题的订正都是一次思维的重塑，保持这种认真的学习态度。' 
     };
 }
 
@@ -295,27 +345,11 @@ function calculateCounselorTrend(lessons: UnitData[]): TrendAnalysis {
     const first = lessons[0];
     const last = lessons[lessons.length - 1];
     const alwaysAbove = lessons.every(l => l.accuracy >= l.classAccuracy);
-    const startedBelow = first.accuracy < first.classAccuracy;
-    const endedAbove = last.accuracy >= last.classAccuracy;
     const isRising = last.accuracy > first.accuracy;
-    const avgDiff = lessons.reduce((sum, l) => sum + (l.accuracy - l.classAccuracy), 0) / lessons.length;
 
-    if (alwaysAbove && isRising) {
-      return { status: 'rising', title: '持续领先且上升', content: '表现优秀且持续进步！单元的正确率均高于班级平均水平，并呈稳步上升趋势，展现扎实的掌握能力和良好的学习节奏。' };
-    }
-    if (alwaysAbove) {
-      return { status: 'above', title: '整体领先', content: '整体表现稳定领先！虽然单元间略有波动，但全程均高于班级平均线，说明基础扎实，若能加强波动单元的巩固，表现将更出色。' };
-    }
-    if (startedBelow && endedAbove && isRising) {
-      return { status: 'reversal', title: '后劲十足', content: '进步显著，后劲十足！从前期稍显生疏到后期稳步超越班级平均，体现了良好的适应能力和反思改进的学习态度。' };
-    }
-    if (Math.abs(avgDiff) < 5) {
-      return { status: 'stable', title: '紧跟步伐', content: '表现稳定，跟紧班级步伐。各单元正确率与班级平均非常接近，若能进一步突破薄弱环节，有望实现领先。' };
-    }
-    if (isRising) {
-      return { status: 'rising-below', title: '步入上升通道', content: '虽暂未超越平均，但已步入上升通道！正确率逐单元提升，显示你正在逐步掌握方法，请保持当前学习节奏，加强复习。' };
-    }
-    return { status: 'stable', title: '稳步提升', content: '继续保持良好的学习状态，期待你在后续单元中有更精彩的表现！' };
+    if (alwaysAbove && isRising) return { status: 'rising', title: '持续领先且上升', content: '表现优秀且持续进步！各单元正确率均高于班级平均水平并稳步上升。' };
+    if (alwaysAbove) return { status: 'above', title: '整体领先', content: '整体表现稳定领先！基础扎实，保持这个节奏。' };
+    return { status: 'stable', title: '紧跟步伐', content: '表现稳定，跟紧班级步伐，突破薄弱环节有望实现领先。' };
 }
 
 export const getStudentSummaries = (rows: StudentDataRow[]) => {

@@ -1,3 +1,4 @@
+
 export type UserRole = 'counselor' | 'headteacher';
 
 export interface StudentDataRow {
@@ -31,6 +32,7 @@ export interface UnitData {
   unitNumber: number;
   unitName: string;
   timeSpentSeconds: number;
+  classTimeSpentSeconds: number; // Added for HT comparison
   status: 'high' | 'low';
   statusLabel: string;
   accuracy: number;
@@ -75,5 +77,6 @@ export interface ProcessedReportData {
   
   // Analysis
   trendAnalysis: TrendAnalysis;
+  errorAnalysis?: TrendAnalysis; // Specific for Head Teacher error statistics
   monthlySummary: MonthlySummary;
 }
