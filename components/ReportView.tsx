@@ -81,8 +81,8 @@ const themes: Record<ThemeType, ThemeConfig> = {
   }
 };
 
-const calculateRankings = (allRows: StudentDataRow[], range: { min: number, max: number }, role: string, currentStudentName: string) => {
-    const studentMap = new Map<string, { accuracies: Record<number, number>, totalScore: number, avgAccuracy: number, count: number, finishedCount: number, rowCount: number, id: any }>();
+const calculateRankings = (allRows: StudentDataRow[], range: { min: number, max: number }, role: string, currentStudentId: string | number) => {
+    const studentMap = new Map<string, { name: string, accuracies: Record<number, number>, totalScore: number, avgAccuracy: number, count: number, finishedCount: number, rowCount: number, id: any }>();
     
     allRows.forEach(r => {
         const isHT = role === 'headteacher';
@@ -95,11 +95,12 @@ const calculateRankings = (allRows: StudentDataRow[], range: { min: number, max:
           if (isNaN(unitSeq) || unitSeq < range.min || unitSeq > range.max) return; 
         }
         
-        if (!studentMap.has(r.real_name)) { 
-          studentMap.set(r.real_name, { accuracies: {}, totalScore: 0, avgAccuracy: 0, count: 0, finishedCount: 0, rowCount: 0, id: r.user_id }); 
+        const userIdStr = String(r.user_id);
+        if (!studentMap.has(userIdStr)) { 
+          studentMap.set(userIdStr, { name: r.real_name, accuracies: {}, totalScore: 0, avgAccuracy: 0, count: 0, finishedCount: 0, rowCount: 0, id: r.user_id }); 
         }
         
-        const e = studentMap.get(r.real_name)!;
+        const e = studentMap.get(userIdStr)!;
         const rate = parseRate(r.answer_right_rate);
         e.accuracies[lessonSeq] = rate;
         
@@ -109,7 +110,7 @@ const calculateRankings = (allRows: StudentDataRow[], range: { min: number, max:
         }
     });
 
-    const res = Array.from(studentMap.entries()).map(([name, v]) => {
+    const res = Array.from(studentMap.values()).map((v) => {
         let totalScoreHT = 0; let totalCounselorAcc = 0; let countCounselor = 0;
         if (role === 'headteacher') { 
           [0, 1, 2, 3, 4, 5].forEach(l => { if (v.accuracies[l] !== undefined) totalScoreHT += v.accuracies[l]; }); 
@@ -120,7 +121,7 @@ const calculateRankings = (allRows: StudentDataRow[], range: { min: number, max:
         const completionRate = v.rowCount > 0 ? (v.finishedCount / v.rowCount) * 100 : 0;
         
         return { 
-          name, userId: v.id, accuracies: v.accuracies, totalScore: Math.round(totalScoreHT), 
+          name: v.name, userId: String(v.id), accuracies: v.accuracies, totalScore: Math.round(totalScoreHT), 
           avgAccuracy: countCounselor > 0 ? totalCounselorAcc / countCounselor : 0, 
           completionRate, rank: 0 
         };
@@ -131,8 +132,8 @@ const calculateRankings = (allRows: StudentDataRow[], range: { min: number, max:
     } else { 
       res.sort((a, b) => {
         if (b.completionRate !== a.completionRate) return b.completionRate - a.completionRate;
-        if (a.name === currentStudentName) return -1;
-        if (b.name === currentStudentName) return 1;
+        if (a.userId === String(currentStudentId)) return -1;
+        if (b.userId === String(currentStudentId)) return 1;
         return b.avgAccuracy - a.avgAccuracy;
       });
     }
@@ -193,12 +194,12 @@ const ReportView: React.FC<ReportViewProps> = ({
   const [tempErrorCounts, setTempErrorCounts] = useState(customErrorCounts.join('\n'));
   
   const currentCurriculum = CURRICULA[selectedCurriculumKey] || [];
-  const { rankings, total } = useMemo(() => calculateRankings(rawData, currentRange, data.role, data.studentName), [rawData, currentRange, data.role, data.studentName]);
-  const myRank = rankings.find(r => r.name === data.studentName);
+  const { rankings, total } = useMemo(() => calculateRankings(rawData, currentRange, data.role, data.studentId), [rawData, currentRange, data.role, data.studentId]);
+  const myRank = rankings.find(r => r.userId === String(data.studentId));
   const displayedRanks = useMemo(() => {
-      const idx = rankings.findIndex(r => r.name === data.studentName);
+      const idx = rankings.findIndex(r => r.userId === String(data.studentId));
       return idx === -1 ? [] : rankings.slice(Math.max(0, idx - 5), Math.min(rankings.length, idx + 6));
-  }, [rankings, data.studentName]);
+  }, [rankings, data.studentId]);
 
   const handleSaveMetadata = () => {
     onUpdateCustomUnitNames(tempUnitNames.split('\n').map((l: string) => l.trim()));
@@ -313,7 +314,7 @@ const ReportView: React.FC<ReportViewProps> = ({
                     <button key={k} onClick={() => onThemeChange(k)} className={`px-4 py-1.5 rounded-full text-xs font-black transition-all ${currentTheme === k ? 'bg-slate-800 text-white shadow-md' : 'text-slate-400'}`}>{themes[k].label}</button>
                 ))}
             </div>
-            {!isHT && <div className="bg-white px-4 py-2 rounded-full border-2 border-slate-100 shadow-sm flex items-center gap-2"><Filter className="w-4 h-4 text-slate-300"/><select value={currentRange.min} onChange={e => onRangeChange(parseInt(e.target.value), currentRange.max)} className="bg-transparent font-black text-sm outline-none cursor-pointer">{availableUnits.map((u: number) => <option key={u} value={u}>第{u}单元</option>)}</select><span className="text-slate-200">~</span><select value={currentRange.max} onChange={e => onRangeChange(currentRange.min, parseInt(e.target.value))} className="bg-transparent font-black text-sm outline-none cursor-pointer">{availableUnits.map((u: number) => <option key={u} value={u}>第{u}单元</option>)}</select></div>}
+            {!isHT && <div className="bg-white px-4 py-2 rounded-full border-2 border-slate-100 shadow-sm flex items-center gap-2"><Filter className="w-4 h-4 text-slate-300"/><select value={currentRange.min} onChange={e => onRangeChange(parseInt(e.target.value), currentRange.max)} className="bg-transparent font-black text-sm outline-none cursor-pointer">{availableUnits.map((u: number) => <option key={`min-${u}`} value={u}>第{u}单元</option>)}</select><span className="text-slate-200">~</span><select value={currentRange.max} onChange={e => onRangeChange(currentRange.min, parseInt(e.target.value))} className="bg-transparent font-black text-sm outline-none cursor-pointer">{availableUnits.map((u: number) => <option key={`max-${u}`} value={u}>第{u}单元</option>)}</select></div>}
             <button onClick={handleExportImage} disabled={isCapturing} className={`px-8 py-2.5 rounded-full font-black flex items-center gap-2 transition-all active:translate-y-1 ${isCapturing ? 'opacity-50 cursor-not-allowed' : ''} ${c.primary}`}>
               {isCapturing ? <Clock className="w-5 h-5 animate-spin"/> : <ImageIcon className="w-5 h-5"/>}
               {isCapturing ? '正在生成...' : '1:1 精准导出'}
@@ -498,7 +499,7 @@ const ReportView: React.FC<ReportViewProps> = ({
                                     const maxWrong = Math.max(...tableUnits.map((item:any) => item.wrongCount), 1);
                                     const wrongBarWidth = (u.wrongCount / maxWrong) * 80;
                                     return (
-                                        <tr key={u.unitNumber} className={`transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-slate-100`}>
+                                        <tr key={`${u.unitNumber}-${i}`} className={`transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-slate-100`}>
                                             <td className="px-4 py-5 font-black whitespace-nowrap text-xs leading-none">{u.unitName}</td>
                                             {!isHT && <td className="px-4 py-5 text-center align-middle">{renderAssociationBadge(u.association)}</td>}
                                             <td className="px-4 py-5 text-center font-bold opacity-50 text-xs leading-none">{formatDuration(u.timeSpentSeconds)}</td>
@@ -571,7 +572,7 @@ const ReportView: React.FC<ReportViewProps> = ({
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                             {displayedRanks.map(r => {
-                                const isMe = r.name === data.studentName; const masked = isMe ? r.name : (r.name.charAt(0) + 'x'.repeat(Math.min(r.name.length - 1, 1))).slice(0, 4);
+                                const isMe = r.userId === String(data.studentId); const masked = isMe ? r.name : (r.name.charAt(0) + 'x'.repeat(Math.min(r.name.length - 1, 1))).slice(0, 4);
                                 return (
                                     <tr key={r.userId} className={`${isMe ? c.rankingHighlightRow : 'hover:bg-slate-50/50'} transition-all`}>
                                         <td className="px-6 py-5">

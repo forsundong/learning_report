@@ -1,5 +1,5 @@
 {
-  "name": "edu-archive-generator",
+  "name": "student-learning-report",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -7,21 +7,23 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "html-to-image": "^1.11.13",
+    "lucide-react": "^0.461.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "lucide-react": "^0.460.0",
-    "jszip": "^3.10.1",
-    "html2canvas": "^1.4.1"
+    "recharts": "^2.13.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "gh-pages": "^6.2.0",
     "typescript": "~5.6.2",
-    "vite": "^6.0.0",
-    "gh-pages": "^6.3.0"
+    "vite": "^6.0.0"
   }
 }

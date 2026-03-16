@@ -5,7 +5,7 @@ import { Search, Filter, ChevronRight, Users, GraduationCap } from 'lucide-react
 
 interface Props {
   data: StudentDataRow[];
-  onSelectStudent: (name: string) => void;
+  onSelectStudent: (id: string) => void;
   onReupload: () => void;
 }
 
@@ -104,7 +104,7 @@ const StudentList: React.FC<Props> = ({ data, onSelectStudent, onReupload }) => 
             <tbody className="divide-y divide-indigo-50">
               {filteredStudents.length > 0 ? (
                 filteredStudents.map((student) => (
-                  <tr key={student.name} className="hover:bg-indigo-50/30 transition-colors group">
+                  <tr key={student.id} className="hover:bg-indigo-50/30 transition-colors group">
                     <td className="px-6 py-5">
                         <div className="font-bold text-lg text-indigo-900">{student.name}</div>
                     </td>
@@ -119,7 +119,7 @@ const StudentList: React.FC<Props> = ({ data, onSelectStudent, onReupload }) => 
                     <td className="px-6 py-5 text-center font-medium text-gray-500">第 {student.lastUnit} 单元</td>
                     <td className="px-6 py-5 text-right">
                       <button
-                        onClick={() => onSelectStudent(student.name)}
+                        onClick={() => onSelectStudent(student.id)}
                         className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-full transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
                       >
                         生成报告

@@ -56,6 +56,7 @@ export interface MonthlySummary {
 }
 
 export interface ProcessedReportData {
+  studentId: string | number;
   studentName: string;
   grade: string;
   teacher: string;

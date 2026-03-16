@@ -59,10 +59,10 @@ const translateGrade = (grade: string): string => {
   return foundKey ? map[foundKey] : grade;
 };
 
-export const getAvailableUnits = (rows: StudentDataRow[], studentName: string): number[] => {
+export const getAvailableUnits = (rows: StudentDataRow[], studentId: string | number): number[] => {
     const units = new Set<number>();
     rows.forEach(r => {
-        if (r.real_name === studentName) {
+        if (String(r.user_id) === String(studentId)) {
             const seq = parseInt(String(r.level_sequence), 10);
             if (!isNaN(seq)) units.add(seq);
         }
@@ -91,13 +91,14 @@ const getAccuracyBadge = (avgAcc: number): Badge => {
 
 export const processExcelData = (
     rows: StudentDataRow[], 
-    targetStudentName: string,
+    targetStudentId: string | number,
     role: UserRole,
     unitRange?: { min: number, max: number }
 ): ProcessedReportData | null => {
   if (!rows || rows.length === 0) return null;
-  const studentRows = rows.filter(r => r.real_name === targetStudentName);
+  const studentRows = rows.filter(r => String(r.user_id) === String(targetStudentId));
   if (studentRows.length === 0) return null;
+  const targetStudentName = studentRows[0].real_name;
 
   const lessons: UnitData[] = [];
   const targetLevel = unitRange ? unitRange.max : Math.max(...studentRows.map(r => parseInt(String(r.level_sequence), 10)));
@@ -171,6 +172,7 @@ export const processExcelData = (
 
     const totalTime = lessons.reduce((s, l) => s + l.timeSpentSeconds, 0);
     return {
+      studentId: targetStudentId,
       studentName: targetStudentName, grade: translateGrade(studentRows[0]?.package_grade),
       teacher: studentRows[0]?.counselor_name || '老师', role,
       totalTimeSeconds: totalTime, avgTimePerSession: totalTime / (lessons.length || 1),
@@ -221,6 +223,7 @@ export const processExcelData = (
     const avgAcc = lessonsList.reduce((s, l) => s + l.accuracy, 0) / (lessonsList.length || 1);
 
     return {
+      studentId: targetStudentId,
       studentName: targetStudentName, grade: translateGrade(studentRows[0]?.package_grade),
       teacher: studentRows[0]?.counselor_name || '老师', role,
       totalTimeSeconds: totalTime, avgTimePerSession: totalTime / (lessonsList.length || 1),
@@ -355,10 +358,11 @@ function calculateCounselorTrend(lessons: UnitData[]): TrendAnalysis {
 export const getStudentSummaries = (rows: StudentDataRow[]) => {
   const map = new Map<string, any>();
   rows.forEach(r => {
-    if (!map.has(r.real_name)) {
-      map.set(r.real_name, { name: r.real_name, grade: translateGrade(r.package_grade), teacher: r.counselor_name, unitCount: 0, lastUnit: 0 });
+    const userIdStr = String(r.user_id);
+    if (!map.has(userIdStr)) {
+      map.set(userIdStr, { id: userIdStr, name: r.real_name, grade: translateGrade(r.package_grade), teacher: r.counselor_name, unitCount: 0, lastUnit: 0 });
     }
-    const s = map.get(r.real_name)!;
+    const s = map.get(userIdStr)!;
     s.unitCount++;
     s.lastUnit = Math.max(s.lastUnit, parseInt(String(r.level_sequence), 10));
   });

@@ -21,7 +21,7 @@ function App() {
   const [rawData, setRawData] = useState<StudentDataRow[]>([]);
   const [reportData, setReportData] = useState<ProcessedReportData | null>(null);
   
-  const [selectedStudentName, setSelectedStudentName] = useState<string | null>(null);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [availableUnits, setAvailableUnits] = useState<number[]>([]);
   const [unitRange, setUnitRange] = useState<{ min: number, max: number }>({ min: 1, max: 1 });
   const [currentTheme, setCurrentTheme] = useState<ThemeType>('default');
@@ -61,17 +61,17 @@ function App() {
     setView('list');
   };
 
-  const handleSelectStudent = (studentName: string) => {
-    const units = getAvailableUnits(rawData, studentName);
+  const handleSelectStudent = (studentId: string) => {
+    const units = getAvailableUnits(rawData, studentId);
     if (units.length === 0) return alert('该学生没有有效数据');
 
     const min = units[0];
     const max = units[units.length - 1];
     setAvailableUnits(units);
     setUnitRange({ min, max });
-    setSelectedStudentName(studentName);
+    setSelectedStudentId(studentId);
 
-    const studentRow = rawData.find(r => r.real_name === studentName);
+    const studentRow = rawData.find(r => String(r.user_id) === String(studentId));
     if (studentRow) {
       const studentGrade = studentRow.package_grade || '';
       const mappedGrade = studentGrade.toLowerCase().includes('one') ? '一年级' : 
@@ -86,7 +86,7 @@ function App() {
       }
     }
 
-    const processed = processExcelData(rawData, studentName, role, { min, max });
+    const processed = processExcelData(rawData, studentId, role, { min, max });
     if (processed) {
       setReportData(processed);
       setView('report');
@@ -96,21 +96,21 @@ function App() {
   const handleSwitchStudentById = (userId: string | number) => {
     const student = rawData.find(r => String(r.user_id) === String(userId));
     if (student) {
-      handleSelectStudent(student.real_name);
+      handleSelectStudent(String(student.user_id));
     } else {
       alert(`未找到 ID 为 ${userId} 的学员`);
     }
   };
 
   const handleUnitRangeChange = (min: number, max: number) => {
-    if (!selectedStudentName) return;
+    if (!selectedStudentId) return;
     setUnitRange({ min, max });
-    const processed = processExcelData(rawData, selectedStudentName, role, { min, max });
+    const processed = processExcelData(rawData, selectedStudentId, role, { min, max });
     if (processed) setReportData(processed);
   };
 
   const handleReset = () => {
-    setRawData([]); setReportData(null); setSelectedStudentName(null); setView('upload');
+    setRawData([]); setReportData(null); setSelectedStudentId(null); setView('upload');
   };
 
   return (
